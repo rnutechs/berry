@@ -75,20 +75,27 @@ async def json_handler(websocket: ServerConnection) -> None:
                 pass
             case CommandMessage(command=f"actions/register"):
                 if msg_json.data == None or "actions" not in msg_json.data or type(msg_json.data["actions"]) != list[ActionType]: continue
-                await register_action(msg_json.game, msg_json.data["actions"])
+                await register_actions(msg_json.game, msg_json.data["actions"])
             case CommandMessage(command="actions/unregister"):
                 if msg_json.data == None or "action_names" not in msg_json.data or type(msg_json.data["action_names"]) != list[str]: continue
-                await unregister_action(msg_json.game, msg_json.data["action_names"])
+                await unregister_actions(msg_json.game, msg_json.data["action_names"])
             case CommandMessage(command="actions/force"):
                 pass
             case CommandMessage(command="actions/result"):
                 pass
             case CommandMessage(command="voice/start"):
-                pass
+                await register_voice(msg_json.game)
             case CommandMessage(command="voice/speakers/register"):
-                pass
+                if msg_json.data == None or "speakers" not in msg_json.data or type(msg_json.data["speakers"]) != list[dict[str, int | str]]: continue
+                speakers_tuple: list[tuple[int, str]] = []
+                for speaker in msg_json.data["speakers"]:
+                    if ("id" not in speaker or type(speaker["id"]) != int or
+                        "name" not in speaker or type(speaker["name"]) != str): continue
+                    speakers_tuple.append((speaker["id"], speaker["name"]))
+                await register_speakers(msg_json.game, speakers_tuple)
             case CommandMessage(command="voice/speakers/unregister"):
-                pass
+                if msg_json.data == None or "ids" not in msg_json.data or type(msg_json.data["ids"]) != list[int]: continue
+                await unregister_speakers(msg_json.game, msg_json.data["ids"])
             case _: continue
 async def voice_handler(websocket: ServerConnection) -> None:
     async for message in websocket:
@@ -97,7 +104,7 @@ async def voice_handler(websocket: ServerConnection) -> None:
 async def register_game(websocket: ServerConnection, game: str) -> None:
     global game_sessions, game_sessions_lock
     async with game_sessions_lock: game_sessions[game] = GameSession(websocket)
-async def register_action(game: str, actions: list[ActionType]) -> None:
+async def register_actions(game: str, actions: list[ActionType]) -> None:
     global game_sessions, game_sessions_lock
     async with game_sessions_lock:
         if game not in game_sessions: return
@@ -110,7 +117,7 @@ async def register_action(game: str, actions: list[ActionType]) -> None:
                     break
             if already_registered == True: continue
             session.actions.append(action)
-async def unregister_action(game: str, action_names: list[str]) -> None:
+async def unregister_actions(game: str, action_names: list[str]) -> None:
     global game_sessions, game_sessions_lock
     async with game_sessions_lock:
         if game not in game_sessions: return
@@ -127,13 +134,13 @@ async def register_voice(game: str) -> None:
         if game not in game_sessions: return
         session: GameSession = game_sessions[game]
         session.voice = True
-async def register_speaker(game: str, speakers: list[tuple[int, str]]) -> None:
+async def register_speakers(game: str, speakers: list[tuple[int, str]]) -> None:
     global game_sessions, game_sessions_lock
     async with game_sessions_lock:
         if game not in game_sessions or game_sessions[game].voice != True: return
         session: GameSession = game_sessions[game]
         for user in speakers: session.speakers[user[0]] = user[1]
-async def unregister_speaker(game: str, speaker_ids: list[int]) -> None:
+async def unregister_speakers(game: str, speaker_ids: list[int]) -> None:
     global game_sessions, game_sessions_lock
     async with game_sessions_lock:
         if game not in game_sessions or game_sessions[game].voice != True: return
@@ -143,6 +150,7 @@ async def unregister_speaker(game: str, speaker_ids: list[int]) -> None:
             del session.speakers[speaker_id]
 
 
+# run the server
 async def main() -> None:
     # load environment variables
     load_dotenv()
